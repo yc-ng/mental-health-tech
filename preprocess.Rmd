@@ -1,0 +1,187 @@
+---
+title: "Pre-processing the Survey Data"
+author: "YC Huang"
+output: 
+    github_document:
+        toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+The data is obtained from [OSMI's Survey on Mental Health in the Tech Workplace in 2014](https://www.kaggle.com/osmi/mental-health-in-tech-survey) and is available as a csv file.
+
+
+## Setting up the Workspace
+
+We will be using the following packages. The `scipen` option is set so that certain large numbers can be viewed as fixed format instead of scientific format.
+
+```{r libs and options, message=FALSE, warning=FALSE}
+library(readr)       # read data
+library(dplyr)       # process the data
+library(stringr)     # work with strings
+library(forcats)     # handle factor variables
+options(scipen = 15) # display large numbers as fixed
+```
+
+## Looking at the Data
+
+The `survey` dataset has 1259 observations and 27 variables.
+
+```{r read and glimpse, message=FALSE}
+survey <- read_csv("data/survey.csv")
+glimpse(survey)
+```
+
+Many of the character type variables (`Gender` to `obs_consequence`) can be represented as categorical variables.
+
+Note that not all the responses were submitted in 2014:
+
+```{r timestamp}
+tail(survey$Timestamp)
+
+sum(survey$Timestamp >= "2015-01-01")
+```
+
+There are certain variables that require cleaning if they are to be used for further analysis.
+
+## The Age Variable
+
+The `summary()` quickly reveals some outliers:
+
+```{r age summary}
+summary(survey$Age)
+```
+
+Besides the most extreme values, there are some other abnormal values in this column:
+
+```{r age outliers}
+head(sort(survey$Age, decreasing = T), 8) # highest outliers
+head(sort(survey$Age, decreasing = F), 8) # lowest/negative outliers
+```
+
+The 2 highest values & the negative ages are clearly invalid, and we should also ignore those ages 11 and below. Instead of throwing the entire observations away, we instead convert these values to `NA`:
+
+```{r cleaning age}
+survey_clean <- survey    # create a copy of the dataset for cleaning
+
+survey_clean$Age[!(survey_clean$Age %in% 18:99)] <- NA  # only keep ages 18 to 99
+```
+
+## The Gender Variable
+
+The Gender variable is a free-text field on the survey form, so it contains a variety of submissions. 
+
+```{r}
+head(table(survey$Gender), 10) # display only the first 10 responses
+```
+
+Some responses are misspelt, some refer to other genders, while some other responses have no ostensible meaning. Our approach to cleaning up this variable is as follows:  
+
+* Convert all strings to lower case  
+* Replace instances of synonyms (like woman to female, guy to male)  
+* Capture key descriptors like 'trans', 'queer', 'non-binary'  
+    * Due to small sample size, these genders would be grouped into a common category for further analysis.  
+    
+We use the `stringr` package to construct a pipe of string replacements based on the above approach:
+
+```{r cleaning gender 1}
+gender_clean <- survey$Gender %>%
+    str_to_lower() %>%                          # convert to lowercase
+    # 'woman' to 'female', 'man' to 'male'
+    str_replace("\\bwoman\\b", "female") %>%    
+    str_replace("\\bman\\b", "male") %>%
+    # convert cis-genders to their respective genders
+    str_replace("^cis[- ](female|male)", "\\1") %>%     
+    str_replace("(female|male)[- ]\\(cis\\)", "\\1") %>% 
+    # reword trans genders into a consistent format
+    str_replace("(female|male).*trans.*", "trans \\1") %>% 
+    str_replace("^trans-(female|male)", "trans \\1") %>% 
+    # extract the first option from multiple answers separated by /
+    str_replace("(\\b\\w+\\b)/.*", "\\1") %>% 
+    # extract instances of 'queer'
+    str_replace(".*(queer)$", "\\1") %>%
+    # reword guys as males
+    str_replace(".*\\b(?:male|guy)\\b.+", "male") %>% 
+    # fix typos of male and female
+    str_replace("^m\\w*", "male") %>% 
+    str_replace("^fe?\\w*\\b", "female")
+```
+
+Due to small sample size, we will group responses that are not male/female into a single *other* category. Other meaningless/nonsensical responses are converted to *NA*:
+
+```{r}
+others <- c("queer", "trans female","agender", "androgyne", "enby", "non-binary")
+gender_clean[gender_clean %in% others] <- "other"
+genders <- c("male", "female", "other")
+gender_clean[!(gender_clean %in% genders)] <- NA
+summary(factor(gender_clean))
+```
+
+```{r}
+# assign cleaned vector to dataset
+survey_clean$Gender <- gender_clean
+```
+
+## Handling Factor Variables
+
+As `read_csv` imports all character columns as type `character`, we will need to identify the appropriate categorical variables and convert them into type `factor`. For this dataset, the variables occupy columns 3-26 (`Gender`, `Country`, `state`... `obs_consequence`).
+
+```{r convert to factor}
+# convert character variables into factor variables
+survey_clean[3:26] <- lapply(survey_clean[3:26], as.factor)
+```
+
+Many of the factor variables consist of ordered responses: there is usually a "Yes" response, a "No" response, and there may be a middle response such as "Don't know" or "Maybe". We can thus reorder the factor levels for each of these variables. First, we assign the column indices according to the number of responses:
+
+```{r}
+# column indexes based on how many factor levels 
+col_2lvls <- c(7:8, 11:12, 26)
+col_3lvls <- c(6, 13:17, 19:25)
+col_many <- c(9, 10, 18)
+```
+
+We use `fct_relevel()` from the `forcats` package to reorder the levels for each of these variables:
+
+```{r reorder levels 1}
+# reorder 2-level factor columns as "Yes", "No"
+survey_clean[col_2lvls] <- survey_clean[col_2lvls] %>% 
+    lapply(fct_relevel, "Yes", "No")
+
+# reorder 3-level factor columns as "Yes", (middle), "No"
+survey_clean[col_3lvls] <- survey_clean[col_3lvls] %>% 
+    lapply(fct_relevel, "Yes") %>% 
+    lapply(fct_relevel, "No", after = 2)
+```
+
+For the few factor variables with other types of values, we would have to reorder them manually:
+
+```{r reorder levels 2}
+# manually reorder many-level columns
+survey_clean$work_interfere <- survey_clean$work_interfere %>% 
+    fct_relevel("Often", "Sometimes", "Rarely", "Never")
+survey_clean$no_employees <- survey_clean$no_employees %>% 
+    fct_relevel("1-5",     "6-25",     "26-100", 
+                "100-500", "500-1000", "More than 1000")
+survey_clean$leave <- survey_clean$leave %>% 
+    fct_relevel("Very easy", "Somewhat easy", "Don't know", 
+                "Somewhat difficult", "Very difficult")
+```
+
+## Conclusion
+
+Now that we have cleaned up the dataset, we can use it for future analysis. 
+
+Since `write.csv()` and `write_csv()` coerces factor variables to character, we use `saveRDS()` to save our dataset as an RDS object (with specified column types) which we can load during subsequent sessions:
+
+```{r save data, eval = FALSE}
+saveRDS(survey_clean, file = "data/survey.rds")
+```
+
+To summarise our data processing:
+
+* We handled outlier values in the `Age` variable  
+* We cleaned up and standardized inputs in the `Gender` variable  
+* We converted the necessary variables to factors
