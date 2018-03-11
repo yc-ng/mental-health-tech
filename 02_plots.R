@@ -85,3 +85,8 @@ survey_clean %>%
     ggplot(aes(x = us_state, y = total)) +
     geom_bar(stat = "identity") +
     coord_flip()
+
+# 2 dimensional plotting
+survey_clean %>% 
+    ggplot(aes(no_employees, fill = work_interfere)) +
+    geom_bar()
