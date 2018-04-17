@@ -15,6 +15,8 @@ Introduction
 
 The data is obtained from [OSMI's Survey on Mental Health in the Tech Workplace in 2014](https://www.kaggle.com/osmi/mental-health-in-tech-survey) and is available as a csv file.
 
+The [data dictionary](data_dictionary.txt) for this dataset is also included for ease of reference.
+
 Setting up the Workspace
 ------------------------
 
