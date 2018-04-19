@@ -8,6 +8,8 @@ YC Huang
 -   [Visualizing Demographic Variables (Age, Gender, Country, State)](#visualizing-demographic-variables-age-gender-country-state)
 -   [Visualizing Survey Responses (Single Variable)](#visualizing-survey-responses-single-variable)
     -   [Initial observations](#initial-observations)
+-   [Two-variable Exploratory Analysis](#two-variable-exploratory-analysis)
+    -   [By Geographic Region](#by-geographic-region)
 
 Introduction
 ------------
@@ -24,7 +26,6 @@ library(dplyr)     # data manipulation
 library(forcats)   # handle factor variables
 library(ggplot2)   # plotting
 library(gridExtra) # arrange multiple ggplots
-library(purrr)     # map functions
 ```
 
 Loading the Data
@@ -141,3 +142,33 @@ survey_bar3 <- names(survey_clean)[24:26] %>%
 -   Significantly more respondents believed that discussing a mental health issue with their employer would have negative consequences relative to discussing a physical health issue with their employer.
 -   However, many respondents appear to be comfortable discussing mental health issues with their coworkers or supervisor (is this implied to be in an informal setting?).
 -   This stands in contrast with a clear reluctance to bring up mental health issues in an interview with a potential employer.
+
+Two-variable Exploratory Analysis
+---------------------------------
+
+### By Geographic Region
+
+There were more respondents in the United States who have sought treatment for mental health conditions than those who did not. This difference was barely significant for respondents in the United Kingdom and Canada (which had the 2nd and 3rd most respondents by country). Amongst other countries, most respondents have *not* sought mental health treatment.
+
+``` r
+survey_clean %>% 
+    mutate(Country = fct_lump(Country, 3)) %>% 
+    ggplot(aes(x = Country, fill = treatment)) +
+    geom_bar(position = position_dodge()) +
+    labs(fill = "Seek treatment")
+```
+
+![](datavis_pt1_files/figure-markdown_github/country-treatment-1.png)
+
+Across the United States, most states had more respondents seeking mental health treatment than otherwise. One notable exception would be Tennessee according to the following plot, but the sample size and absolute difference are too small to infer significant conclusions.
+
+``` r
+survey_clean %>% 
+    filter(!is.na(state)) %>% 
+    mutate(us_state = fct_lump(state, 10)) %>% 
+    ggplot(aes(x = us_state, fill = treatment)) +
+    geom_bar(position = position_dodge()) +
+    labs(x = "US State", fill = "Seek treatment")
+```
+
+![](datavis_pt1_files/figure-markdown_github/state-treatment-1.png)
